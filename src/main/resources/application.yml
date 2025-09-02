@@ -41,3 +41,8 @@ logging:
   level:
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+rate-limiting:
+  enabled: true
+  requests-per-minute: 60
+  burst-capacity: 10

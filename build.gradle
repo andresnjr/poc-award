@@ -25,6 +25,7 @@ dependencies {
     implementation 'com.h2database:h2'
     implementation 'com.opencsv:opencsv:5.9'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
+    implementation 'com.github.vladimir-bukhtoyarov:bucket4j-core:7.6.0'
     providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

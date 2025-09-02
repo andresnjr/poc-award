@@ -22,6 +22,7 @@ src/main/java/br/com/asneu/award/
 - **H2 Database**
 - **OpenCSV** para leitura do arquivo CSV
 - **SpringDoc OpenAPI 2.2.0** (Swagger) para documentação
+- **Bucket4j** para rate limiting
 - **Gradle** como ferramenta de build
 - **JUnit 5** para testes de integração
 
@@ -159,12 +160,50 @@ year;title;studios;producers;winner
 # WAR será gerado em: build/libs/award-0.0.1-SNAPSHOT.war
 ```
 
+## Rate Limiting
+
+A API possui rate limiting configurável habilitado por padrão para proteger contra sobrecarga e abuso. 
+
+### Configuração
+
+As configurações podem ser alteradas no arquivo `application.yml`:
+
+```yaml
+rate-limiting:
+  enabled: true              # Habilita/desabilita o rate limiting
+  requests-per-minute: 60    # Número de requests por minuto por IP
+  burst-capacity: 10         # Capacidade de burst (requests instantâneos)
+```
+
+### Comportamento
+
+- **Por IP**: O controle é feito por endereço IP do cliente
+- **Headers X-Forwarded-For**: Suporte para proxies e load balancers
+- **Resposta 429**: Quando o limite é excedido, retorna HTTP 429 Too Many Requests
+
+**Exemplo de resposta quando o limite é excedido:**
+```json
+{
+  "error": "Too Many Requests",
+  "message": "Rate limit exceeded. Please try again later.",
+  "status": 429
+}
+```
+
+### Configurações Recomendadas
+
+- **Desenvolvimento**: 100 req/min, burst 20
+- **Produção**: 60 req/min, burst 10
+- **API Pública**: 30 req/min, burst 5
+
+Para desabilitar completamente, defina `enabled: false`.
+
 ## Características Técnicas
 
 ### Nível de Maturidade Richardson - Nível 2
 - Uso de HTTP verbs (GET)
 - URIs como identificadores de recursos
-- Códigos de status HTTP apropriados
+- Códigos de status HTTP apropriados (200, 429, 500)
 - Representação JSON
 
 ### Clean Code
