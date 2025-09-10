@@ -1,8 +1,8 @@
 package br.com.asneu.award.integration;
 
 import br.com.asneu.award.AwardApplication;
-import br.com.asneu.award.domain.entity.Movie;
-import br.com.asneu.award.domain.repository.MovieRepository;
+import br.com.asneu.award.application.service.CsvImportService;
+import br.com.asneu.award.infrastructure.repository.MovieJpaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,7 +16,6 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -37,7 +36,10 @@ public class ProducerControllerIntegrationTest {
     private WebApplicationContext webApplicationContext;
     
     @Autowired
-    private MovieRepository movieRepository;
+    private MovieJpaRepository movieJpaRepository;
+    
+    @Autowired
+    private CsvImportService csvImportService;
     
     @Autowired
     private ObjectMapper objectMapper;
@@ -48,24 +50,9 @@ public class ProducerControllerIntegrationTest {
     public void setup() {
         this.mockMvc = MockMvcBuilders.webAppContextSetup(this.webApplicationContext).build();
         
-        List<Movie> testMovies = Arrays.asList(
-            new Movie(1980, "Can't Stop the Music", "Associated Film Distribution", "Allan Carr", true),
-            new Movie(1990, "Ghosts Can't Do It", "Triumph Releasing", "Bo Derek", true),
-            new Movie(1999, "Wild Wild West", "Warner Bros", "Jon Peters", true),
-            new Movie(2002, "Swept Away", "Screen Gems", "Matthew Vaughn", true),
-            new Movie(1984, "Bolero", "Cannon Films", "Bo Derek", true),
-            new Movie(1985, "Rambo: First Blood Part II", "Columbia Pictures", "Buzz Feitshans", true),
-            new Movie(1986, "Howard the Duck", "Universal Studios", "Gloria Katz", true),
-            new Movie(1987, "Leonard Part 6", "Columbia Pictures", "Bill Cosby", true),
-            new Movie(1988, "Cocktail", "Touchstone Pictures", "Ted Field and Robert W. Cort", true),
-            new Movie(2004, "Catwoman", "Warner Bros", "Denise Di Novi and Edward McDonnell", true),
-            new Movie(2005, "Son of the Mask", "New Line Cinema", "Erica Huggins", true),
-            new Movie(2015, "Fifty Shades of Grey", "Universal Pictures", "Michael De Luca, Dana Brunetti and E. L. James", true),
-            new Movie(2019, "The Haunting of Sharon Tate", "Skyline Entertainment", "Lucas Jarach, Vanessa Pereira and Daniel Farrands", true),
-            new Movie(2021, "Diana the Musical", "Netflix", "Beth Williams", true)
-        );
-        
-        movieRepository.saveAll(testMovies);
+        // Limpa o banco e importa dados do arquivo CSV padrão
+        movieJpaRepository.deleteAll();
+        csvImportService.importCsvData();
     }
     
     @Test
@@ -79,6 +66,7 @@ public class ProducerControllerIntegrationTest {
         String jsonResponse = result.getResponse().getContentAsString();
         Map<String, Object> response = objectMapper.readValue(jsonResponse, Map.class);
         
+        // Validação da estrutura básica
         assertNotNull(response);
         assertTrue(response.containsKey("min"));
         assertTrue(response.containsKey("max"));
@@ -88,38 +76,25 @@ public class ProducerControllerIntegrationTest {
         
         assertNotNull(minIntervals);
         assertNotNull(maxIntervals);
-        
         assertFalse(minIntervals.isEmpty(), "Intervalos mínimos não devem estar vazios");
+        assertFalse(maxIntervals.isEmpty(), "Intervalos máximos não devem estar vazios");
         
-        for (Map<String, Object> interval : minIntervals) {
-            assertTrue(interval.containsKey("producer"));
-            assertTrue(interval.containsKey("interval"));
-            assertTrue(interval.containsKey("previousWin"));
-            assertTrue(interval.containsKey("followingWin"));
-            
-            assertNotNull(interval.get("producer"));
-            assertNotNull(interval.get("interval"));
-            assertNotNull(interval.get("previousWin"));
-            assertNotNull(interval.get("followingWin"));
-        }
+        // Validação da resposta esperada exata para o arquivo padrão
+        // Min: Joel Silver com intervalo de 1 ano (1990-1991)
+        assertEquals(1, minIntervals.size(), "Deve haver exatamente 1 produtor com intervalo mínimo");
+        Map<String, Object> minInterval = minIntervals.get(0);
+        assertEquals("Joel Silver", minInterval.get("producer"));
+        assertEquals(1, minInterval.get("interval"));
+        assertEquals(1990, minInterval.get("previousWin"));
+        assertEquals(1991, minInterval.get("followingWin"));
         
-        for (Map<String, Object> interval : maxIntervals) {
-            assertTrue(interval.containsKey("producer"));
-            assertTrue(interval.containsKey("interval"));
-            assertTrue(interval.containsKey("previousWin"));
-            assertTrue(interval.containsKey("followingWin"));
-            
-            assertNotNull(interval.get("producer"));
-            assertNotNull(interval.get("interval"));
-            assertNotNull(interval.get("previousWin"));
-            assertNotNull(interval.get("followingWin"));
-        }
-        
-        if (!minIntervals.isEmpty() && !maxIntervals.isEmpty()) {
-            Integer minInterval = (Integer) minIntervals.get(0).get("interval");
-            Integer maxInterval = (Integer) maxIntervals.get(0).get("interval");
-            assertTrue(minInterval <= maxInterval, "Intervalo mínimo deve ser <= intervalo máximo");
-        }
+        // Max: Matthew Vaughn com intervalo de 13 anos (2002-2015)
+        assertEquals(1, maxIntervals.size(), "Deve haver exatamente 1 produtor com intervalo máximo");
+        Map<String, Object> maxInterval = maxIntervals.get(0);
+        assertEquals("Matthew Vaughn", maxInterval.get("producer"));
+        assertEquals(13, maxInterval.get("interval"));
+        assertEquals(2002, maxInterval.get("previousWin"));
+        assertEquals(2015, maxInterval.get("followingWin"));
     }
     
     @Test
@@ -128,6 +103,47 @@ public class ProducerControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.min").isArray())
                 .andExpect(jsonPath("$.max").isArray());
+    }
+    
+    @Test
+    public void testResponseMustMatchDefaultFileContent() throws Exception {
+        // Este teste garante que a resposta da API está de acordo com o arquivo padrão movielist.csv
+        // Se o arquivo for modificado, este teste deve falhar
+        
+        MvcResult result = mockMvc.perform(get("/api/producers/prize-intervals"))
+                .andExpect(status().isOk())
+                .andReturn();
+        
+        String jsonResponse = result.getResponse().getContentAsString();
+        Map<String, Object> response = objectMapper.readValue(jsonResponse, Map.class);
+        
+        // Valida resposta completa conforme especificação
+        String expectedJson = """
+            {
+              "min": [
+                {
+                  "producer": "Joel Silver",
+                  "interval": 1,
+                  "previousWin": 1990,
+                  "followingWin": 1991
+                }
+              ],
+              "max": [
+                {
+                  "producer": "Matthew Vaughn",
+                  "interval": 13,
+                  "previousWin": 2002,
+                  "followingWin": 2015
+                }
+              ]
+            }""";
+        
+        Map<String, Object> expectedResponse = objectMapper.readValue(expectedJson, Map.class);
+        
+        // Compara estruturas completas - qualquer alteração no arquivo fará o teste falhar
+        assertEquals(expectedResponse, response, 
+            "A resposta da API deve corresponder exatamente aos dados do arquivo padrão movielist.csv. " +
+            "Se este teste falhou, o arquivo padrão foi modificado e afetou o resultado.");
     }
     
     @Test
@@ -142,30 +158,23 @@ public class ProducerControllerIntegrationTest {
         List<Map<String, Object>> minIntervals = (List<Map<String, Object>>) response.get("min");
         List<Map<String, Object>> maxIntervals = (List<Map<String, Object>>) response.get("max");
         
-        if (!minIntervals.isEmpty()) {
-            Map<String, Object> minInterval = minIntervals.get(0);
-            assertNotNull(minInterval.get("interval"));
-            assertNotNull(minInterval.get("previousWin"));
-            assertNotNull(minInterval.get("followingWin"));
+        // Valida cálculo dos intervalos
+        for (Map<String, Object> interval : minIntervals) {
+            Integer intervalValue = (Integer) interval.get("interval");
+            Integer previous = (Integer) interval.get("previousWin");
+            Integer following = (Integer) interval.get("followingWin");
             
-            Integer interval = (Integer) minInterval.get("interval");
-            Integer previous = (Integer) minInterval.get("previousWin");
-            Integer following = (Integer) minInterval.get("followingWin");
-            
-            assertEquals(interval, following - previous, "Intervalo deve ser igual ao ano seguinte menos o ano anterior");
+            assertEquals(intervalValue, following - previous, 
+                "Intervalo deve ser igual ao ano seguinte menos o ano anterior");
         }
         
-        if (!maxIntervals.isEmpty()) {
-            Map<String, Object> maxInterval = maxIntervals.get(0);
-            assertNotNull(maxInterval.get("interval"));
-            assertNotNull(maxInterval.get("previousWin"));
-            assertNotNull(maxInterval.get("followingWin"));
+        for (Map<String, Object> interval : maxIntervals) {
+            Integer intervalValue = (Integer) interval.get("interval");
+            Integer previous = (Integer) interval.get("previousWin");
+            Integer following = (Integer) interval.get("followingWin");
             
-            Integer interval = (Integer) maxInterval.get("interval");
-            Integer previous = (Integer) maxInterval.get("previousWin");
-            Integer following = (Integer) maxInterval.get("followingWin");
-            
-            assertEquals(interval, following - previous, "Intervalo deve ser igual ao ano seguinte menos o ano anterior");
+            assertEquals(intervalValue, following - previous, 
+                "Intervalo deve ser igual ao ano seguinte menos o ano anterior");
         }
     }
 }
